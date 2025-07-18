@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 from pathlib import Path
 import os
+import uvicorn
 import aiofiles
 import pandas as pd
 import math
@@ -212,3 +213,7 @@ async def process_multiple_regions(file: UploadFile = File(...)):
 
     return StreamingResponse(stream_zip(), media_type="application/x-zip-compressed",
                              headers={"Content-Disposition": "attachment; filename=Processed_Regions.zip"})
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
