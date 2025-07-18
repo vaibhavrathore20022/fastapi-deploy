@@ -1,21 +1,28 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import StreamingResponse
-from fastapi import FastAPI
 from pathlib import Path
 import os
-import uvicorn
 import aiofiles
 import pandas as pd
 import math
 import tempfile
 import zipfile
 import shutil
+from enum import Enum
 
 app = FastAPI()
 ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
 
-# List of regions to process
-REGIONS = ["INDORE", "NARMADAPURAM", "REWA", "BHOPALCENTRAL", "GWALIOR", "JABALPUR"]
+# Enum for region dropdown
+class RegionEnum(str, Enum):
+    INDORE = "INDORE"
+    NARMADAPURAM = "NARMADAPURAM"
+    REWA = "REWA"
+    BHOPALCENTRAL = "BHOPALCENTRAL"
+    GWALIOR = "GWALIOR"
+    JABALPUR = "JABALPUR"
+
+REGIONS = [region.value for region in RegionEnum]
 
 def split_header(header: str) -> str:
     return "\n".join(header.split())
@@ -110,7 +117,6 @@ def process_excel_file(input_df: pd.DataFrame, region: str):
         ws.write(total_row, 0, "Total Count", header_format)
         ws.write(total_row, 1, len(df_s), header_format)
 
-    # Processed Sheet
     df_processed = df_filtered.sort_values(by='TOTAL TRANSITION COUNT', ascending=False)
     df_processed.to_excel(writer, sheet_name='Processed', index=False, header=False)
     ws0 = writer.sheets['Processed']
@@ -141,13 +147,11 @@ def process_excel_file(input_df: pd.DataFrame, region: str):
             ws0.write(a_row, c_i, int((series >= calculated_dynamic_targets[col]).sum()), green_fmt)
             ws0.write(na_row, c_i, int((series < calculated_dynamic_targets[col]).sum()), red_fmt)
 
-    # Inactive
     df_inactive = df_filtered[df_filtered['TOTAL LOGGING DAYS'] == 0]
     inactive_cols = ['MECHNAT_ID', 'BC_NAME', 'BRANCH_NAME', 'LOCATION TYPE', 'TOTAL LOGGING DAYS']
     if not df_inactive.empty:
         write_sheet('Inactive', df_inactive[inactive_cols], text_fmt=red_fmt)
 
-    # Low_Trans
     if {'TOTAL LOGGING DAYS', 'TOTAL TRANSITION COUNT'}.issubset(df_filtered.columns):
         dft = df_filtered[pd.to_numeric(df_filtered['TOTAL LOGGING DAYS'], errors='coerce') > 0].copy()
         dft['TARGET'] = dft['TOTAL LOGGING DAYS'].apply(lambda x: math.ceil((100 / 31) * x))
@@ -155,17 +159,14 @@ def process_excel_file(input_df: pd.DataFrame, region: str):
         if not dft.empty:
             write_sheet('Low_Trans', dft[['MECHNAT_ID', 'BC_NAME', 'BRANCH_NAME', 'LOCATION TYPE', 'TOTAL LOGGING DAYS', 'TOTAL TRANSITION COUNT']], color_col='TOTAL TRANSITION COUNT', color_fmt=red_bg_black)
 
-    # Recovery List
     dfr = df_filtered[pd.to_numeric(df_filtered['TOTAL LOAN RECOVERY'], errors='coerce') > 0]
     if not dfr.empty:
         write_sheet('Recovery_List', dfr[['MECHNAT_ID', 'BC_NAME', 'BRANCH_NAME', 'LOCATION TYPE', 'TOTAL LOAN RECOVERY', 'TOTAL AMOUNT']])
 
-    # Loan Lead
     dfl = df_filtered[pd.to_numeric(df_filtered['LOAN LEAD GENERATION COUNT'], errors='coerce') > 0]
     if not dfl.empty:
         write_sheet('Loan_Lead_List', dfl[['MECHNAT_ID', 'BC_NAME', 'BRANCH_NAME', 'LOCATION TYPE', 'LOAN LEAD GENERATION COUNT']])
 
-    # PM_Not_Working
     df_pm = df_filtered[
         (pd.to_numeric(df_filtered['TOTAL LOGGING DAYS'], errors='coerce') > 0) &
         (pd.to_numeric(df_filtered['TOTAL APY SUCCESS'], errors='coerce').fillna(0) == 0) &
@@ -178,11 +179,14 @@ def process_excel_file(input_df: pd.DataFrame, region: str):
     writer.close()
     return out_path
 
-@app.post("/process-multiple-regions/")
-async def process_multiple_regions(file: UploadFile = File(...)):
+@app.post("/process-single-region/")
+async def process_single_region(
+    region: RegionEnum = Form(...),
+    file: UploadFile = File(...)
+):
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(400, "Only Excel files (.xlsx, .xls) allowed")
+        raise HTTPException(400, detail="Only Excel files (.xlsx, .xls) allowed")
 
     temp_dir = tempfile.mkdtemp()
     input_path = os.path.join(temp_dir, file.filename)
@@ -190,31 +194,23 @@ async def process_multiple_regions(file: UploadFile = File(...)):
         content = await file.read()
         await out_file.write(content)
 
-    df = pd.read_excel(input_path, sheet_name="DATA", header=0)
-    zip_path = os.path.join(temp_dir, "all_regions.zip")
-    with zipfile.ZipFile(zip_path, "w") as zipf:
-        for region in REGIONS:
-            try:
-                output_file = process_excel_file(df, region)
-                region_file_name = f"{region}_processed.xlsx"
-                region_path = os.path.join(temp_dir, region_file_name)
-                shutil.move(output_file, region_path)
-                zipf.write(region_path, arcname=region_file_name)
-            except Exception as e:
-                continue
+    try:
+        df = pd.read_excel(input_path, sheet_name="DATA", header=0)
+        output_file_path = process_excel_file(df, region.value)
 
-    async def stream_zip():
-        async with aiofiles.open(zip_path, 'rb') as zipf:
-            while True:
-                chunk = await zipf.read(8192)
-                if not chunk:
-                    break
-                yield chunk
+        async def file_streamer():
+            async with aiofiles.open(output_file_path, 'rb') as f:
+                while True:
+                    chunk = await f.read(8192)
+                    if not chunk:
+                        break
+                    yield chunk
+            shutil.rmtree(temp_dir)
+
+        return StreamingResponse(file_streamer(),
+                                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                 headers={"Content-Disposition": f"attachment; filename={region.value}_processed.xlsx"})
+
+    except Exception as e:
         shutil.rmtree(temp_dir)
-
-    return StreamingResponse(stream_zip(), media_type="application/x-zip-compressed",
-                             headers={"Content-Disposition": "attachment; filename=Processed_Regions.zip"})
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+        raise HTTPException(500, detail=str(e))
