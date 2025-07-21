@@ -1,6 +1,0 @@
-fastapi
-uvicorn
-aiofiles
-pandas
-openpyxl
-xlsxwriter
