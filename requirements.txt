@@ -4,3 +4,4 @@ aiofiles
 pandas
 openpyxl
 xlsxwriter
+python-multipart
