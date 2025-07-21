@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
 from pathlib import Path
 import os
 import aiofiles
@@ -23,6 +23,26 @@ class RegionEnum(str, Enum):
     JABALPUR = "JABALPUR"
 
 REGIONS = [region.value for region in RegionEnum]
+
+@app.get("/", response_class=HTMLResponse)
+async def form_page():
+    region_options = "\n".join([f'<option value="{r}">{r}</option>' for r in REGIONS])
+    return f"""
+    <html>
+        <head><title>Upload Excel File</title></head>
+        <body>
+            <h2>Upload Excel File for a Region</h2>
+            <form action="/process-single-region/" enctype="multipart/form-data" method="post">
+                <label for="region">Select Region:</label>
+                <select name="region">{region_options}</select><br><br>
+                <label for="file">Upload Excel File:</label>
+                <input type="file" name="file" accept=".xlsx,.xls" required/><br><br>
+                <input type="submit" value="Process"/>
+            </form>
+        </body>
+    </html>
+    """
+
 
 def split_header(header: str) -> str:
     return "\n".join(header.split())
