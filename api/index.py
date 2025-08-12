@@ -34,7 +34,7 @@ def process_excel_file(input_df: pd.DataFrame, region: str):
         'MECHNAT_ID', 'BC_NAME', 'BRANCH_NAME', 'LOCATION TYPE',
         'TOTAL LOGGING DAYS', 'TOTAL TRANSITION COUNT',
         'TOTAL EKYC SUCCESS', 'TOTAL APY SUCCESS',
-        'TOTAL PMSBY SUCCESS', 'TOTAL PMJJBY SUCCESS',
+        'TOTAL PMSBY SUCCESS', 'TOTAL PMJJBY SUCCESS', 'RE EKYC',
         'TOTAL LOAN RECOVERY', 'TOTAL AMOUNT',
         'LOAN LEAD GENERATION COUNT', 'CO ORDINATOR NAME'
     ]
@@ -136,6 +136,14 @@ def process_excel_file(input_df: pd.DataFrame, region: str):
                 num = pd.to_numeric(val, errors='coerce')
                 if pd.isna(num) or num == 0:
                     fmt = red_fmt
+
+            if col == 'RE EKYC':
+                num = pd.to_numeric(val, errors='coerce')
+                if pd.isna(num) or num == 0:
+                    fmt = red_fmt
+                elif num > 0:
+                    fmt = green_fmt
+                    
             ws0.write(r + 1, c_i, "" if pd.isna(val) else val, fmt)
 
     for c_i, col in enumerate(df_processed.columns):
