@@ -33,8 +33,8 @@ def process_excel_file(input_df: pd.DataFrame, region: str):
     desired_final_columns = [
         'MECHNAT_ID', 'BC_NAME', 'BRANCH_NAME', 'LOCATION TYPE',
         'TOTAL LOGGING DAYS', 'TOTAL TRANSITION COUNT',
-        'TOTAL EKYC SUCCESS', 'TOTAL APY SUCCESS',
-        'TOTAL PMSBY SUCCESS', 'TOTAL PMJJBY SUCCESS', 'RE EKYC',
+        'TOTAL EKYC SUCCESS', 'RE EKYC',
+        'TOTAL APY SUCCESS', 'TOTAL PMSBY SUCCESS', 'TOTAL PMJJBY SUCCESS',
         'TOTAL LOAN RECOVERY', 'TOTAL AMOUNT',
         'LOAN LEAD GENERATION COUNT', 'CO ORDINATOR NAME'
     ]
@@ -42,9 +42,10 @@ def process_excel_file(input_df: pd.DataFrame, region: str):
     column_renaming_map = {'TOTAL_FIN_SUCCESS': 'TOTAL TRANSITION COUNT'}
     monthly_targets = {
         'TOTAL LOGGING DAYS': 24, 'TOTAL TRANSITION COUNT': 200,
-        'TOTAL EKYC SUCCESS': 15, 'TOTAL APY SUCCESS': 5,
-        'TOTAL PMSBY SUCCESS': 30, 'TOTAL PMJJBY SUCCESS': 15,
-        'TOTAL LOAN RECOVERY': 1, 'LOAN LEAD GENERATION COUNT': 1
+        'TOTAL EKYC SUCCESS': 15, 'RE EKYC': 1,
+        'TOTAL APY SUCCESS': 5, 'TOTAL PMSBY SUCCESS': 30,
+        'TOTAL PMJJBY SUCCESS': 15, 'TOTAL LOAN RECOVERY': 1,
+        'LOAN LEAD GENERATION COUNT': 1
     }
     BASE_MONTH_DAYS = 31
 
@@ -72,7 +73,7 @@ def process_excel_file(input_df: pd.DataFrame, region: str):
         eff_days = BASE_MONTH_DAYS
 
     calculated_dynamic_targets = {
-        col: math.ceil((mt / BASE_MONTH_DAYS) * eff_days)
+        col: math.ceil((mt / BASE_MONTH_DAYS) * eff_days) if col != 'RE EKYC' else mt
         for col, mt in monthly_targets.items() if col in df_filtered.columns
     }
 
@@ -136,14 +137,6 @@ def process_excel_file(input_df: pd.DataFrame, region: str):
                 num = pd.to_numeric(val, errors='coerce')
                 if pd.isna(num) or num == 0:
                     fmt = red_fmt
-
-            if col == 'RE EKYC':
-                num = pd.to_numeric(val, errors='coerce')
-                if pd.isna(num) or num == 0:
-                    fmt = red_fmt
-                elif num > 0:
-                    fmt = green_fmt
-                    
             ws0.write(r + 1, c_i, "" if pd.isna(val) else val, fmt)
 
     for c_i, col in enumerate(df_processed.columns):
